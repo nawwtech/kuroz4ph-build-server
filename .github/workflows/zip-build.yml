@@ -1,0 +1,93 @@
+name: ZIP Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      zip_path:
+        description: 'Path to uploaded ZIP in repo'
+        required: true
+      build_mode:
+        description: 'release or debug'
+        required: true
+        default: 'release'
+      chat_id:
+        description: 'Telegram chat ID'
+        required: true
+      timestamp:
+        description: 'Build timestamp'
+        required: true
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download project ZIP
+        run: |
+          echo "Extracting project ZIP..."
+          mkdir -p project_raw
+          cp "${{ github.event.inputs.zip_path }}" project.zip
+          unzip -q project.zip -d project_raw
+          if [ $(ls project_raw | wc -l) -eq 1 ]; then
+            INNER=$(ls project_raw)
+            mv project_raw/$INNER/* project_raw/ 2>/dev/null || true
+            mv project_raw/$INNER/.* project_raw/ 2>/dev/null || true
+            rmdir project_raw/$INNER 2>/dev/null || true
+          fi
+          ls project_raw/
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: 'stable'
+          cache: true
+
+      - name: Configure Android local.properties
+        working-directory: project_raw
+        run: |
+          echo "flutter.sdk=$FLUTTER_HOME" > android/local.properties
+          echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
+          echo "flutter.buildMode=${{ github.event.inputs.build_mode }}" >> android/local.properties
+
+      - name: Install dependencies
+        working-directory: project_raw
+        run: flutter pub get
+
+      - name: Build APK
+        working-directory: project_raw
+        run: |
+          if [ "${{ github.event.inputs.build_mode }}" = "release" ]; then
+            flutter build apk --release --no-tree-shake-icons 2>&1
+          else
+            flutter build apk --debug --no-tree-shake-icons 2>&1
+          fi
+
+      - name: Locate APK
+        working-directory: project_raw
+        run: |
+          if [ "${{ github.event.inputs.build_mode }}" = "release" ]; then
+            APK_PATH=$(find build/app/outputs -name "*.apk" | grep release | head -1)
+          else
+            APK_PATH=$(find build/app/outputs -name "*.apk" | grep debug | head -1)
+          fi
+          echo "APK: $APK_PATH"
+          cp "$APK_PATH" ../app-${{ github.event.inputs.build_mode }}.apk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: APK
+          path: app-${{ github.event.inputs.build_mode }}.apk
+          retention-days: 1

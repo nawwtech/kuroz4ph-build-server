@@ -1,2 +1,3 @@
 # kuroz4ph-build-server
-Build server for Kuroz4ph Builder Bot - Auto created
+Build server repo for Kuroz4ph Builder Bot.
+Auto-created by Kuroz4ph Builder.
